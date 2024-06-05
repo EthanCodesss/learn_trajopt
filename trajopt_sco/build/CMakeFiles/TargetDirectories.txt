@@ -1,0 +1,3 @@
+/home/ethan/learn_trajopt/trajopt_sco/build/CMakeFiles/rebuild_cache.dir
+/home/ethan/learn_trajopt/trajopt_sco/build/CMakeFiles/edit_cache.dir
+/home/ethan/learn_trajopt/trajopt_sco/build/CMakeFiles/trajopt_sco.dir

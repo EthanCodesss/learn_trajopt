@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.10.0)
+project(trajopt_sco VERSION 1.0 LANGUAGES CXX)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
+find_package(osqp QUIET)
+find_package(Eigen3 REQUIRED)
+if(NOT TARGET JsonCpp::JsonCpp)
+  find_package(jsoncpp REQUIRED)
+elseif(NOT TARGET jsoncpp_lib)
+  add_library(jsoncpp_lib ALIAS JsonCpp::JsonCpp)
+endif()
+
+find_package(Boost REQUIRED)
+find_package(OpenMP REQUIRED)
+
+set(SCO_SOURCE_FILES
+    src/solver_interface.cpp
+    src/solver_utils.cpp
+    src/modeling.cpp
+    src/expr_ops.cpp
+    src/optimizers.cpp
+    src/modeling_utils.cpp)
+
+if(osqp_FOUND)
+  list(APPEND SCO_SOURCE_FILES src/osqp_interface.cpp)
+endif()
+
+add_library(${PROJECT_NAME} ${SCO_SOURCE_FILES})
+
+if(osqp_FOUND)
+  target_link_libraries(${PROJECT_NAME} PRIVATE osqp::osqp)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_OSQP=ON)
+endif()
+
+target_link_libraries(
+  ${PROJECT_NAME}
+  PUBLIC Boost::boost
+         Eigen3::Eigen
+         ${CMAKE_DL_LIBS}
+         jsoncpp_lib
+         OpenMP::OpenMP_CXX)
+
+
+target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                  "$<INSTALL_INTERFACE:include>")

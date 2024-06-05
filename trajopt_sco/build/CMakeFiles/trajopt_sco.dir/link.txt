@@ -1,0 +1,2 @@
+/usr/bin/ar qc libtrajopt_sco.a CMakeFiles/trajopt_sco.dir/src/solver_interface.cpp.o CMakeFiles/trajopt_sco.dir/src/solver_utils.cpp.o CMakeFiles/trajopt_sco.dir/src/modeling.cpp.o CMakeFiles/trajopt_sco.dir/src/expr_ops.cpp.o CMakeFiles/trajopt_sco.dir/src/optimizers.cpp.o
+/usr/bin/ranlib libtrajopt_sco.a
