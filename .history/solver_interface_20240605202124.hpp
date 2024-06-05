@@ -1,0 +1,243 @@
+#pragma once
+
+#include <cassert>
+#include <iosfwd>
+#include <limits>
+#include <memory>
+#include <trajopt_sco/sco_common.hpp>
+#include <vector>
+namespace Json {
+class Value;
+}
+
+namespace sco {
+enum ConstraintType { EQ, INEQ };
+
+using ConstraintTypeVector = std::vector<ConstraintType>;
+
+enum CvxOptStatus { CVX_SOLVED, CVX_INFEASIBLE, CVX_FAILED };
+
+class Model {
+public:
+  using Ptr = std::shared_ptr<Model>;
+  using ConstPtr = std::shared_ptr<const Model>;
+  Model() = default;
+  virtual ~Model() = default;
+  Model(const Model &) = default;
+  Model(Model &&) = default;
+  Model &operator=(Model &&) = default;
+
+  /**
+   * @brief Add a var to the model
+   * @details These must be threadsafe
+   */
+  virtual Var addVar(const std::string &name) = 0;
+  virtual Var addVar(const std::string &name, double lb, double ub);
+
+  /**
+   * @brief Add a equation to the model
+   * @details These must be threadsafe
+   */
+  virtual Cnt addEqCnt(const AffExpr &,
+                       const std::string &name) = 0; // expr == 0
+  virtual Cnt addIneqCnt(const AffExpr &,
+                         const std::string &name) = 0; // expr <= 0
+  virtual Cnt addIneqCnt(const QuadExpr &,
+                         const std::string &name) = 0; // expr <= 0
+
+  /**
+   * @brief Remove items from model
+   * @details These must be threadsafe
+   */
+  virtual void removeVar(const Var &var);
+  virtual void removeCnt(const Cnt &cnt);
+  virtual void removeVars(const VarVector &vars) = 0;
+  virtual void removeCnts(const CntVector &cnts) = 0;
+
+  /**  @details It is not neccessary to make the following methods threadsafe */
+  virtual void update() = 0; // call after adding/deleting stuff
+  virtual void setVarBounds(const Var &var, double lower, double upper);
+  virtual void setVarBounds(const VarVector &vars, const DblVec &lower,
+                            const DblVec &upper) = 0;
+  virtual double getVarValue(const Var &var) const;
+  virtual DblVec getVarValues(const VarVector &vars) const = 0;
+  virtual CvxOptStatus optimize() = 0;
+
+  virtual void setObjective(const AffExpr &) = 0;
+  virtual void setObjective(const QuadExpr &) = 0;
+  virtual void writeToFile(const std::string &fname) const = 0;
+
+  virtual VarVector getVars() const = 0;
+}
+
+struct ModelConfig {
+  using Ptr = std::shared_ptr<ModelConfig>;
+  using ConstPtr = std::shared_ptr<const ModelConfig>;
+  virtual ~ModelConfig() = default;
+};
+
+struct VarRep {
+  using Ptr = std::shared_ptr<VarRep>;
+
+  VarRep(std::size_t _index, std::string _name, void *_creator)
+      : index(_index), name(std::move(_name)), creator(_creator) {}
+  std::size_t index;
+  std::string name;
+  bool removed{false};
+  void *creator;
+};
+
+struct Var {
+  using Ptr = std::shared_ptr<Var>;
+
+  VarRep::Ptr var_rep{nullptr};
+  Var() = default;
+  ~Var() = default;
+  // 这是一个构造函数的定义，
+  // std::move将参数的所有权转移给另一个对象，而不是拷贝，通常用于指针。
+  Var(VarRep::Ptr var_rep) : var_rep(std::move(var_rep)) {}
+  // 这行代码表示Var类的拷贝构造函数被声明，并且使用默认的实现。
+  Var(const Var &other) = default;
+  // 使用默认的运算符
+  Var &operator=(const Var &) = default;
+  // 该函数为移动构造函数，
+  // 接受一个右值引用作为参数，它的目的是将构造函数中参数中对象的资源转移给新创建的对象
+  Var(Var &&) = default;
+  Var &operator=(Var &&) = default;
+
+  // 定义成员函数
+  double value(const double *x) const { return x[var_rep->index]; }
+  double value(const DblVec &x) const {
+    assert(var_rep->index < x.size());
+    return x[static_cast<size_t>(var_rep->index)];
+  }
+};
+
+struct CntRep {
+  using Ptr = std::shared_ptr<CntRep>;
+
+  CntRep(std::size_t _index, void *_creator)
+      : index(_index), creator(_creator) {}
+  CntRep(const CntRep &) = default;
+  CntRep &operator=(const CntRep &) = default;
+  CntRep(CntRep &&) = default;
+  CntRep &operator=(CntRep &&) = default;
+  ~CntRep() = default;
+
+  std::size_t index;
+  bool removed{false};
+  void *creator;
+  // 列表初始化
+  ConstraintType type{ConstraintType::EQ};
+  std::string expr; // todo placeholder
+};
+
+struct Cnt {
+  using Ptr = std::shared_ptr<Cnt>;
+
+  CntRep::Ptr cnt_rep{nullptr};
+  Cnt() = default;
+  Cnt(const Cnt &) = default;
+  Cnt &operator=(const Cnt &) = default;
+  Cnt(Cnt &&) = default;
+  Cnt &operator=(Cnt &&) = default;
+  ~Cnt() = default;
+
+  Cnt(CntRep::Ptr cnt_rep) : cnt_rep(std::move(cnt_rep)) {}
+};
+
+struct AffExpr { // affine expression
+
+  using Ptr = std::shared_ptr<AffExpr>;
+
+  double constant{0};
+  DblVec coeffs;
+  VarVector vars;
+  AffExpr() = default;
+  ~AffExpr() = default;
+  AffExpr(const AffExpr &other) = default;
+  AffExpr &operator=(const AffExpr &) = default;
+  AffExpr(AffExpr &&) = default;
+  AffExpr &operator=(AffExpr &&) = default;
+
+  // 不能隐式初始化，必须显式的调用该构造函数进行对象的初始化
+  explicit AffExpr(double a);
+  explicit AffExpr(const Var &v);
+
+  size_t size() const;
+  double value(const double *x) const;
+  double value(const DblVec &x) const;
+};
+
+// 二次型通常是一个表达式， 包含变量的平方项， 交叉项， 线性项以及常数项
+struct QuadExpr {
+  using Ptr = std::shared_ptr<QuadExpr>;
+
+  AffExpr affexpr;
+  DblVec coeffs;
+  VarVector vars1;
+  VarVector vars2;
+  QuadExpr() = default;
+  // 显式构造函数
+  explicit QuadExpr(double a);
+  explicit QuadExpr(const Var &v);
+  explicit QuadExpr(AffExpr aff);
+  size_t size() const;
+  double value(const double *x) const;
+  double value(const DblVec &x) const;
+};
+
+std::ostream &operator<<(std::ostream &, const Var &);
+std::ostream &operator<<(std::ostream &, const Cnt &);
+std::ostream &operator<<(std::ostream &, const AffExpr &);
+std::ostream &operator<<(std::ostream &, const QuadExpr &);
+
+class ModelType {
+public:
+  enum Value { GUROBI, OSQP, QPOASES, BPMPD, AUTO_SOLVER };
+
+  static const std::vector<std::string> MODEL_NAMES_;
+
+  ModelType();
+  ModelType(const ModelType::Value &v);
+  ModelType(const int &v);
+  ModelType(const std::string &s);
+  operator int() const;
+  bool operator==(const ModelType::Value &a) const;
+  bool operator==(const ModelType &a) const;
+  bool operator!=(const ModelType &a) const;
+  void fromJson(const Json::Value &v);
+  friend std::ostream &operator<<(std::ostream &os, const ModelType &cs);
+
+private:
+  Value value_{Value::AUTO_SOLVER};
+};
+
+std::vector<ModelType> availableSolvers();
+
+std::ostream &operator<<(std::ostream &os, const ModelType &cs);
+
+Model::Ptr createModel(ModelType model_type = ModelType::AUTO_SOLVER,
+                       const ModelConfig::ConstPtr &model_config = nullptr);
+
+void vars2inds(const VarVector &vars, SizeTVec &inds);
+
+void vars2inds(const VarVector &vars, IntVec &inds);
+
+void cnts2inds(const CntVector &cnts, SizeTVec &inds);
+
+void cnts2inds(const CntVector &cnts, IntVec &inds);
+
+/**
+ * @brief simplify2 gets as input a list of indices, corresponding to non-zero
+ *        values in vals, checks that all indexed values are actually non-zero,
+ *        and if they are not, removes them from vals and inds, so that
+ *        inds_out.size() <= inds.size(). Also, it will compact vals so that
+ *        vals_out.size() == inds_out.size()
+ *
+ * @param[in,out] inds indices of non-vero variables in vals
+ * @param[in,out] val values
+ */
+void simplify2(IntVec &inds, DblVec &vals);
+
+} // namespace sco
